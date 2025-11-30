@@ -5,7 +5,15 @@ import { X, User as UserIcon, CreditCard, Settings, Check, Zap, Brain, Shield, A
 import { User, SubscriptionTier } from '../types';
 import { PRICING_TIERS } from '../constants';
 import Avatar from './Avatar';
-import { StripeService, BillingHistoryItem } from '../lib/stripe';
+import {
+  useBillingHistory,
+  useCreateCheckout,
+  useCreatePortal,
+  useCancelSubscription,
+  useUpdateSubscription,
+  BillingHistoryItem,
+} from '@/lib/hooks';
+import { useToast } from '@/lib/hooks/useToast';
 
 interface DashboardProps {
   user: User;
@@ -16,110 +24,93 @@ interface DashboardProps {
 type Tab = 'overview' | 'subscription' | 'settings';
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onClose, onUpdateUser }) => {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [nameEdit, setNameEdit] = useState(user.full_name);
   const [emailEdit, setEmailEdit] = useState(user.email);
-  
+
+  // Billing hooks
+  const { data: billingData, isLoading: loadingHistory } = useBillingHistory();
+  const billingHistory = billingData?.history || [];
+
+  const createCheckout = useCreateCheckout();
+  const createPortal = useCreatePortal();
+  const cancelSubscription = useCancelSubscription();
+  const updateSubscription = useUpdateSubscription();
+
   // Subscription State
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
   const [isLoading, setIsLoading] = useState(false);
-  const [billingHistory, setBillingHistory] = useState<BillingHistoryItem[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  
+
   // Checkout & Interaction State
   const [checkoutStep, setCheckoutStep] = useState<'none' | 'contacting' | 'redirecting' | 'processing' | 'success' | 'portal'>('none');
   const [processingItem, setProcessingItem] = useState<string>('');
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const [toast, setToast] = useState<{message: string, type: 'success'|'error'} | null>(null);
-
-  useEffect(() => {
-      if (activeTab === 'subscription' && user.subscription_tier !== 'free') {
-          loadBillingHistory();
-      }
-  }, [activeTab, user.subscription_tier]);
-
-  const showToast = (message: string, type: 'success'|'error' = 'success') => {
-      setToast({ message, type });
-      setTimeout(() => setToast(null), 3000);
-  };
-
-  const loadBillingHistory = async () => {
-      setLoadingHistory(true);
-      try {
-          const history = await StripeService.getBillingHistory();
-          setBillingHistory(history);
-      } catch (e) {
-          console.error(e);
-          showToast("Failed to load billing history", 'error');
-      } finally {
-          setLoadingHistory(false);
-      }
-  };
 
   // Simulates the full checkout flow
   const handleUpgrade = async (tier: SubscriptionTier) => {
     if (tier === user.subscription_tier) return;
     const plan = PRICING_TIERS[tier];
-    
+
     setProcessingItem(`Upgrade to ${plan.name}`);
     setCheckoutStep('contacting');
 
     try {
-        // 1. Create Session
-        await StripeService.createCheckoutSession(plan.stripePriceId);
-        
+        // 1. Create Checkout Session via API
+        await createCheckout.mutateAsync(tier);
+
         setCheckoutStep('redirecting');
-        
+
         // 2. Simulate Redirect Wait
         await new Promise(resolve => setTimeout(resolve, 2000));
         setCheckoutStep('processing');
 
-        // 3. Simulate Payment Processing on Stripe
-        await new Promise(resolve => setTimeout(resolve, 2500));
+        // 3. Update subscription via API
+        await updateSubscription.mutateAsync(tier);
         setCheckoutStep('success');
 
-        // 4. Update local state (Mock Webhook)
+        // 4. Update local state
         await new Promise(resolve => setTimeout(resolve, 1000));
-        onUpdateUser({ 
-            subscription_tier: tier, 
+        onUpdateUser({
+            subscription_tier: tier,
             credits_remaining: user.credits_remaining + plan.credits,
             subscription_status: 'active',
             cancel_at_period_end: false
         });
-        
+
         setTimeout(() => {
             setCheckoutStep('none');
             setActiveTab('overview');
-            showToast(`Successfully upgraded to ${plan.name}!`);
+            toast.success(`Successfully upgraded to ${plan.name}!`);
         }, 1500);
 
     } catch (error) {
         setCheckoutStep('none');
-        showToast("Payment failed. Please try again.", 'error');
+        toast.error("Payment failed. Please try again.");
     }
   };
 
-  const handleTopUp = async (amount: number, price: number) => {
+  const handleTopUp = async (amount: number) => {
       setProcessingItem(`${amount} Credits Pack`);
       setCheckoutStep('contacting');
       try {
-          await StripeService.createCheckoutSession('price_credit_pack', 'payment');
+          await createCheckout.mutateAsync('basic'); // Mock credit pack checkout
           setCheckoutStep('redirecting');
           await new Promise(resolve => setTimeout(resolve, 1500));
           setCheckoutStep('processing');
           await new Promise(resolve => setTimeout(resolve, 2000));
           setCheckoutStep('success');
-          
+
           await new Promise(resolve => setTimeout(resolve, 800));
           onUpdateUser({ credits_remaining: user.credits_remaining + amount });
-          
+
           setTimeout(() => {
              setCheckoutStep('none');
-             showToast(`${amount} Credits added!`);
+             toast.success(`${amount} Credits added!`);
           }, 1000);
-      } catch (e) {
+      } catch {
           setCheckoutStep('none');
-          showToast("Top-up failed.", 'error');
+          toast.error("Top-up failed.");
       }
   };
 
@@ -130,12 +121,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onClose, onUpdateUser }) =>
   const confirmCancellation = async () => {
       setIsLoading(true);
       try {
-          await StripeService.cancelSubscription('sub_123');
+          await cancelSubscription.mutateAsync();
           onUpdateUser({ cancel_at_period_end: true });
           setShowCancelConfirm(false);
-          showToast("Subscription cancelled. Access remains until period end.", 'success');
-      } catch (e) {
-          showToast("Failed to cancel subscription.", 'error');
+          toast.success("Subscription cancelled. Access remains until period end.");
+      } catch {
+          toast.error("Failed to cancel subscription.");
       } finally {
           setIsLoading(false);
       }
@@ -145,21 +136,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onClose, onUpdateUser }) =>
       setProcessingItem("Stripe Billing Portal");
       setCheckoutStep('portal');
       try {
-          const { url } = await StripeService.createPortalSession();
-          // In a real app, this would redirect: window.location.href = url;
+          await createPortal.mutateAsync();
           await new Promise(resolve => setTimeout(resolve, 2000));
           setCheckoutStep('none');
-          showToast("Opened Billing Portal (Mock Tab)", 'success');
-      } catch (e) {
+          toast.success("Opened Billing Portal");
+      } catch {
           setCheckoutStep('none');
-          showToast("Failed to load portal.", 'error');
+          toast.error("Failed to load portal.");
       }
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
       e.preventDefault();
       onUpdateUser({ full_name: nameEdit, email: emailEdit });
-      showToast("Profile updated successfully.");
+      toast.success("Profile updated successfully.");
   };
 
   // --- Full Screen Checkout/Portal Overlay ---
@@ -212,13 +202,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onClose, onUpdateUser }) =>
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-      {/* Toast Notification */}
-      {toast && (
-        <div className={`fixed bottom-6 right-6 px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium animate-fade-in-up z-[70] flex items-center gap-2 ${toast.type === 'success' ? 'bg-slate-800' : 'bg-red-500'}`}>
-            {toast.type === 'success' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
-            {toast.message}
-        </div>
-      )}
+      {/* Toast notifications are now handled by the global ToastContainer */}
 
       {/* Cancel Confirmation Modal */}
       {showCancelConfirm && (
@@ -324,10 +308,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onClose, onUpdateUser }) =>
                                 </div>
                                 <div className="text-4xl font-bold text-slate-900 tracking-tight">{user.credits_remaining.toLocaleString()}</div>
                                 <div className="mt-6 flex gap-2">
-                                    <button onClick={() => handleTopUp(500, 5)} className="flex-1 text-xs font-semibold bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
+                                    <button onClick={() => handleTopUp(500)} className="flex-1 text-xs font-semibold bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
                                         +500 ($5)
                                     </button>
-                                    <button onClick={() => handleTopUp(1000, 9)} className="flex-1 text-xs font-semibold bg-white border border-blue-200 text-blue-700 px-3 py-2 rounded-lg hover:bg-blue-50 transition-colors">
+                                    <button onClick={() => handleTopUp(1000)} className="flex-1 text-xs font-semibold bg-white border border-blue-200 text-blue-700 px-3 py-2 rounded-lg hover:bg-blue-50 transition-colors">
                                         +1k ($9)
                                     </button>
                                 </div>

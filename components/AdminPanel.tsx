@@ -1,14 +1,15 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
-import { 
-    X, LayoutDashboard, Users, Server, ShieldAlert, Search, 
+import {
+    X, LayoutDashboard, Users, Server, ShieldAlert, Search,
     MoreHorizontal, TrendingUp, DollarSign, Activity, AlertTriangle,
     CheckCircle, Edit2, Ban, Loader2
 } from 'lucide-react';
 import { User } from '../types';
 import { AdminService, AdminStats, SystemLog } from '../lib/admin';
 import Avatar from './Avatar';
+import { useToast } from '@/lib/hooks/useToast';
 
 interface AdminPanelProps {
     onClose: () => void;
@@ -18,6 +19,7 @@ interface AdminPanelProps {
 type AdminTab = 'overview' | 'users' | 'system';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, currentUser }) => {
+    const toast = useToast();
     const [activeTab, setActiveTab] = useState<AdminTab>('overview');
     const [stats, setStats] = useState<AdminStats | null>(null);
     const [users, setUsers] = useState<User[]>([]);
@@ -49,8 +51,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, currentUser }) => {
                 const s = await AdminService.getStats(); // Also get stats for health check
                 setStats(s);
             }
-        } catch (e) {
-            console.error("Failed to load admin data", e);
+        } catch {
+            toast.error('Failed to load admin data');
         } finally {
             setIsLoading(false);
         }
@@ -66,13 +68,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, currentUser }) => {
         setProcessingAction(editingUser.id);
         try {
             const amount = parseInt(creditEditValue);
-            if (isNaN(amount)) return;
-            
+            if (isNaN(amount)) {
+                toast.error('Invalid credit amount');
+                return;
+            }
+
             const updated = await AdminService.updateUserCredits(editingUser.id, amount);
             setUsers(users.map(u => u.id === updated.id ? updated : u));
             setEditingUser(null);
-        } catch (e) {
-            alert("Failed to update credits");
+            toast.success('Credits updated successfully');
+        } catch {
+            toast.error('Failed to update credits');
         } finally {
             setProcessingAction(null);
         }
@@ -84,8 +90,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, currentUser }) => {
         try {
             const updated = await AdminService.toggleUserBan(userId);
             setUsers(users.map(u => u.id === updated.id ? updated : u));
-        } catch (e) {
-            alert("Failed to toggle ban");
+            toast.success('User ban status updated');
+        } catch {
+            toast.error('Failed to toggle ban status');
         } finally {
             setProcessingAction(null);
         }

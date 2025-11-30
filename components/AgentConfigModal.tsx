@@ -1,15 +1,16 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Save, RefreshCw, Zap, Brain, Gavel, Users, Settings, Search, CheckCircle, ChevronDown } from 'lucide-react';
+import { X, Plus, Trash2, Save, RefreshCw, Zap, Brain, Gavel, Users, Settings, Search, CheckCircle, ChevronDown, Loader2 } from 'lucide-react';
 import { Agent, UiColor, ConversationAgentConfig, ChatMode } from '../types';
 import Avatar from './Avatar';
+import { useAgentsMap, useCreateAgent, useUpdateAgent, useDeleteAgent } from '@/lib/hooks/useAgents';
+import { useToast } from '@/lib/hooks/useToast';
+import { LoadingSpinner } from './LoadingSpinner';
 
 interface AgentConfigModalProps {
-  agents: Record<string, Agent>;
   currentConfig: ConversationAgentConfig;
   chatMode: ChatMode;
-  onUpdateAgents: (agents: Record<string, Agent>) => void;
   onUpdateConfig: (config: Partial<ConversationAgentConfig>) => void;
   onClose: () => void;
 }
@@ -35,19 +36,26 @@ const AVAILABLE_COLORS: { id: UiColor, bg: string }[] = [
   { id: 'cyan', bg: 'bg-cyan-500' },
 ];
 
-const AgentConfigModal: React.FC<AgentConfigModalProps> = ({ 
-  agents, currentConfig, chatMode, onUpdateAgents, onUpdateConfig, onClose 
+const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
+  currentConfig, chatMode, onUpdateConfig, onClose
 }) => {
+  const toast = useToast();
+
+  // Fetch agents from API
+  const { data: agents = {}, isLoading: agentsLoading, error: agentsError } = useAgentsMap();
+
+  // Mutations
+  const createAgentMutation = useCreateAgent();
+  const updateAgentMutation = useUpdateAgent();
+  const deleteAgentMutation = useDeleteAgent();
+
   // Navigation State: 'chat-settings' or agentId
   const [activeView, setActiveView] = useState<string>('chat-settings');
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Data State
-  const [localAgents, setLocalAgents] = useState<Record<string, Agent>>({ ...agents });
-  
+
   // --- Local Config State for Chat Settings View ---
   const [configState, setConfigState] = useState<ConversationAgentConfig>({ ...currentConfig });
-  
+
   // --- Form State for Agent Editor View ---
   const [agentForm, setAgentForm] = useState<Partial<Agent>>({});
   const [isFormDirty, setIsFormDirty] = useState(false);
@@ -55,17 +63,17 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
   // When switching views, reset/load data
   useEffect(() => {
     if (activeView !== 'chat-settings') {
-        const agent = localAgents[activeView];
+        const agent = agents[activeView];
         if (agent) {
             setAgentForm({ ...agent });
             setIsFormDirty(false);
         }
     }
-  }, [activeView, localAgents]);
+  }, [activeView, agents]);
 
   // -- Agent CRUD Operations --
 
-  const handleAgentChange = (field: keyof Agent, value: any) => {
+  const handleAgentChange = (field: keyof Agent, value: string | boolean) => {
     setAgentForm(prev => ({ ...prev, [field]: value }));
     setIsFormDirty(true);
   };
@@ -77,41 +85,55 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
     handleAgentChange('avatar_url', url);
   };
 
-  const saveAgent = () => {
+  const saveAgent = async () => {
     if (!agentForm.id) return;
-    setLocalAgents(prev => ({
-        ...prev,
-        [agentForm.id!]: agentForm as Agent
-    }));
-    onUpdateAgents({ ...localAgents, [agentForm.id!]: agentForm as Agent });
-    setIsFormDirty(false);
+
+    try {
+      await updateAgentMutation.mutateAsync({
+        id: agentForm.id,
+        name: agentForm.name,
+        model: agentForm.model,
+        systemInstruction: agentForm.systemInstruction,
+        description: agentForm.description,
+        avatar_url: agentForm.avatar_url,
+        ui_color: agentForm.ui_color,
+      });
+      toast.success('Agent saved successfully');
+      setIsFormDirty(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save agent');
+    }
   };
 
-  const createNewAgent = () => {
+  const createNewAgent = async () => {
     const newId = 'custom_' + Date.now();
-    const newAgent: Agent = {
-      id: newId,
-      name: 'New Agent',
-      description: 'A custom agent.',
-      model: 'gemini-2.5-flash',
-      ui_color: 'indigo',
-      avatar_url: `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${newId}`,
-      systemInstruction: 'You are a helpful assistant.',
-      isCustom: true
-    };
-    setLocalAgents(prev => ({ ...prev, [newId]: newAgent }));
-    setActiveView(newId);
+    try {
+      const newAgent = await createAgentMutation.mutateAsync({
+        name: 'New Agent',
+        model: 'gemini-2.5-flash',
+        systemInstruction: 'You are a helpful assistant.',
+        description: 'A custom agent.',
+        avatar_url: `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${newId}`,
+        ui_color: 'indigo',
+      });
+      toast.success('Agent created successfully');
+      setActiveView(newAgent.id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create agent');
+    }
   };
 
-  const deleteAgent = () => {
+  const deleteAgent = async () => {
     if (!agentForm.isCustom || !agentForm.id) return;
     if (!confirm('Are you sure? This cannot be undone.')) return;
 
-    const updated = { ...localAgents };
-    delete updated[agentForm.id];
-    setLocalAgents(updated);
-    onUpdateAgents(updated);
-    setActiveView('chat-settings');
+    try {
+      await deleteAgentMutation.mutateAsync(agentForm.id);
+      toast.success('Agent deleted successfully');
+      setActiveView('chat-settings');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete agent');
+    }
   };
 
   // -- Chat Config Operations --
@@ -123,24 +145,56 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
 
   const toggleCouncilExpert = (agentId: string) => {
       const current = configState.councilIds || [];
-      const updated = current.includes(agentId) 
+      const updated = current.includes(agentId)
         ? current.filter(id => id !== agentId)
         : [...current, agentId];
       setConfigState(prev => ({ ...prev, councilIds: updated }));
   };
 
   // -- Filtering --
-  const filteredAgents = Object.values(localAgents).filter((a: Agent) => 
+  const filteredAgents = Object.values(agents).filter((a: Agent) =>
     a.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Loading state
+  if (agentsLoading) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+        <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-4">
+          <LoadingSpinner size="lg" />
+          <p className="text-slate-600">Loading agents...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (agentsError) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+        <div className="bg-white rounded-2xl p-8 max-w-md text-center">
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <X className="text-red-600" size={24} />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 mb-2">Failed to load agents</h3>
+          <p className="text-slate-600 mb-4">{agentsError instanceof Error ? agentsError.message : 'An error occurred'}</p>
+          <button onClick={onClose} className="px-4 py-2 bg-slate-900 text-white rounded-lg">
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const isMutating = createAgentMutation.isPending || updateAgentMutation.isPending || deleteAgentMutation.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
       <div className="bg-white w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl flex overflow-hidden ring-1 ring-black/5 font-sans">
-        
+
         {/* LEFT SIDEBAR: Navigation & Library */}
         <div className="w-80 bg-slate-50 border-r border-slate-200 flex flex-col">
-           
+
            {/* Header */}
            <div className="px-6 py-6 pb-4">
               <h2 className="font-bold text-slate-900 text-xl tracking-tight">Configuration</h2>
@@ -149,15 +203,15 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
 
            {/* Navigation List */}
            <div className="flex-1 overflow-y-auto px-4 space-y-6 scrollbar-thin">
-              
+
               {/* Section 1: Context */}
               <div>
                   <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-3">Current Chat</div>
-                  <button 
+                  <button
                     onClick={() => setActiveView('chat-settings')}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group ${
-                        activeView === 'chat-settings' 
-                        ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' 
+                        activeView === 'chat-settings'
+                        ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100'
                         : 'text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'
                     }`}
                   >
@@ -170,14 +224,14 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
               <div>
                   <div className="flex items-center justify-between px-2 mb-3">
                       <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Agent Library</span>
-                      <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-semibold">{Object.keys(localAgents).length}</span>
+                      <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-semibold">{Object.keys(agents).length}</span>
                   </div>
-                  
+
                   {/* Search */}
                   <div className="relative mb-3">
                       <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         placeholder="Find agent..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -210,18 +264,23 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
 
            {/* Footer Action */}
            <div className="p-4 border-t border-slate-200 bg-slate-50">
-               <button 
+               <button
                  onClick={createNewAgent}
-                 className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-700 font-medium py-3 rounded-xl transition-all shadow-sm text-sm hover:shadow-md"
+                 disabled={createAgentMutation.isPending}
+                 className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-700 font-medium py-3 rounded-xl transition-all shadow-sm text-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                >
-                   <Plus size={16} /> Create Agent
+                   {createAgentMutation.isPending ? (
+                     <><Loader2 size={16} className="animate-spin" /> Creating...</>
+                   ) : (
+                     <><Plus size={16} /> Create Agent</>
+                   )}
                </button>
            </div>
         </div>
 
         {/* RIGHT PANEL: Content Views */}
         <div className="flex-1 flex flex-col min-w-0 bg-white relative">
-            
+
             <div className="absolute top-6 right-6 z-10">
                 <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
                     <X size={24} />
@@ -236,8 +295,8 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                         <div className="flex items-center gap-2 text-slate-500">
                            <span>Configure how agents interact in the</span>
                            <span className={`font-semibold px-2 py-0.5 rounded text-sm uppercase tracking-wide
-                               ${chatMode === 'debate' ? 'bg-rose-100 text-rose-700' : 
-                                 chatMode === 'expert-council' ? 'bg-purple-100 text-purple-700' : 
+                               ${chatMode === 'debate' ? 'bg-rose-100 text-rose-700' :
+                                 chatMode === 'expert-council' ? 'bg-purple-100 text-purple-700' :
                                  'bg-indigo-100 text-indigo-700'}`
                            }>
                                {chatMode.replace('-', ' ')}
@@ -262,16 +321,16 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                                                 <p className="text-sm text-slate-500">Fast, intuitive responses</p>
                                             </div>
                                         </div>
-                                        
+
                                         <div className="flex-1 w-full">
                                             <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Assigned Agent</label>
                                             <div className="relative">
-                                                <select 
+                                                <select
                                                     value={configState.system1Id}
                                                     onChange={(e) => setConfigState({...configState, system1Id: e.target.value})}
                                                     className="w-full appearance-none p-3 pl-4 pr-10 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all cursor-pointer hover:bg-slate-100"
                                                 >
-                                                    {Object.values(localAgents).map((a: Agent) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                                    {Object.values(agents).map((a: Agent) => <option key={a.id} value={a.id}>{a.name}</option>)}
                                                 </select>
                                                 <ChevronDown className="absolute right-3 top-3.5 text-slate-400 pointer-events-none" size={16} />
                                             </div>
@@ -291,16 +350,16 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                                                 <p className="text-sm text-slate-500">Deep analytical reasoning</p>
                                             </div>
                                         </div>
-                                        
+
                                         <div className="flex-1 w-full">
                                             <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Assigned Agent</label>
                                             <div className="relative">
-                                                <select 
+                                                <select
                                                     value={configState.system2Id}
                                                     onChange={(e) => setConfigState({...configState, system2Id: e.target.value})}
                                                     className="w-full appearance-none p-3 pl-4 pr-10 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all cursor-pointer hover:bg-slate-100"
                                                 >
-                                                    {Object.values(localAgents).map((a: Agent) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                                    {Object.values(agents).map((a: Agent) => <option key={a.id} value={a.id}>{a.name}</option>)}
                                                 </select>
                                                 <ChevronDown className="absolute right-3 top-3.5 text-slate-400 pointer-events-none" size={16} />
                                             </div>
@@ -317,12 +376,12 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                                     <div className="bg-emerald-50/30 border border-emerald-100 rounded-2xl p-6">
                                         <label className="block text-xs font-bold text-emerald-700 uppercase tracking-wider mb-3">Proponent (In Favor)</label>
                                         <div className="relative">
-                                            <select 
+                                            <select
                                                 value={configState.proponentId}
                                                 onChange={(e) => setConfigState({...configState, proponentId: e.target.value})}
                                                 className="w-full appearance-none p-3 bg-white border border-emerald-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500/20 outline-none"
                                             >
-                                                {Object.values(localAgents).map((a: Agent) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                                {Object.values(agents).map((a: Agent) => <option key={a.id} value={a.id}>{a.name}</option>)}
                                             </select>
                                             <ChevronDown className="absolute right-3 top-3.5 text-emerald-400 pointer-events-none" size={16} />
                                         </div>
@@ -330,18 +389,18 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                                     <div className="bg-rose-50/30 border border-rose-100 rounded-2xl p-6">
                                         <label className="block text-xs font-bold text-rose-700 uppercase tracking-wider mb-3">Opponent (Against)</label>
                                         <div className="relative">
-                                            <select 
+                                            <select
                                                 value={configState.opponentId}
                                                 onChange={(e) => setConfigState({...configState, opponentId: e.target.value})}
                                                 className="w-full appearance-none p-3 bg-white border border-rose-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-rose-500/20 outline-none"
                                             >
-                                                {Object.values(localAgents).map((a: Agent) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                                {Object.values(agents).map((a: Agent) => <option key={a.id} value={a.id}>{a.name}</option>)}
                                             </select>
                                             <ChevronDown className="absolute right-3 top-3.5 text-rose-400 pointer-events-none" size={16} />
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <div className="border-t border-slate-100 pt-6">
                                     <div className="max-w-md">
                                         <div className="flex items-center gap-2 mb-3">
@@ -349,13 +408,13 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                                             <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider">Moderator</label>
                                         </div>
                                         <div className="relative">
-                                            <select 
+                                            <select
                                                 value={configState.moderatorId || ''}
                                                 onChange={(e) => setConfigState({...configState, moderatorId: e.target.value})}
                                                 className="w-full appearance-none p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:ring-2 focus:ring-slate-500/20 outline-none"
                                             >
                                                 <option value="">None (No Moderator)</option>
-                                                {Object.values(localAgents).map((a: Agent) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                                {Object.values(agents).map((a: Agent) => <option key={a.id} value={a.id}>{a.name}</option>)}
                                             </select>
                                             <ChevronDown className="absolute right-3 top-3.5 text-slate-400 pointer-events-none" size={16} />
                                         </div>
@@ -378,15 +437,15 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {Object.values(localAgents).map((agent: Agent) => {
+                                    {Object.values(agents).map((agent: Agent) => {
                                         const isSelected = (configState.councilIds || []).includes(agent.id);
                                         return (
                                             <button
                                                 key={agent.id}
                                                 onClick={() => toggleCouncilExpert(agent.id)}
                                                 className={`flex items-center gap-3 p-4 rounded-2xl border text-left transition-all hover:shadow-sm ${
-                                                    isSelected 
-                                                    ? 'bg-purple-50/40 border-purple-200 ring-1 ring-purple-200' 
+                                                    isSelected
+                                                    ? 'bg-purple-50/40 border-purple-200 ring-1 ring-purple-200'
                                                     : 'bg-white border-slate-200 hover:border-slate-300'
                                                 }`}
                                             >
@@ -411,7 +470,7 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                     </div>
 
                     <div className="p-8 pt-4 border-t border-slate-100 flex justify-end">
-                        <button 
+                        <button
                             onClick={saveChatConfig}
                             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-xl font-bold text-sm shadow-xl shadow-indigo-200 hover:shadow-2xl hover:shadow-indigo-300 transition-all hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
                         >
@@ -429,7 +488,7 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                     <div className="h-20 border-b border-slate-100 flex items-center justify-between px-10">
                         <h2 className="font-bold text-slate-900 text-xl flex items-center gap-3">
                             {agentForm.isCustom ? 'Edit Agent' : 'System Agent'}
-                            {agentForm.isSystem && <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide">Core</span>}
+                            {!agentForm.isCustom && <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide">Core</span>}
                         </h2>
                         {isFormDirty && (
                              <span className="text-xs text-amber-700 font-bold bg-amber-50 px-3 py-1.5 rounded-full animate-pulse border border-amber-100">Unsaved Changes</span>
@@ -444,7 +503,7 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                                     <div className="w-28 h-28 rounded-3xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50">
                                         <img src={agentForm.avatar_url} className="w-full h-full object-cover" alt="Avatar" />
                                     </div>
-                                    <button 
+                                    <button
                                         onClick={generateAvatar}
                                         className="absolute -bottom-2 -right-2 p-2.5 bg-white border border-slate-200 rounded-full text-slate-500 hover:text-indigo-600 shadow-md hover:shadow-lg transition-all z-10"
                                         title="Generate New Look"
@@ -455,21 +514,23 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                                 <div className="flex-1 space-y-5 pt-1">
                                     <div>
                                         <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Display Name</label>
-                                        <input 
-                                            type="text" 
-                                            value={agentForm.name || ''} 
+                                        <input
+                                            type="text"
+                                            value={agentForm.name || ''}
                                             onChange={e => handleAgentChange('name', e.target.value)}
-                                            className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 text-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-300"
+                                            disabled={!agentForm.isCustom}
+                                            className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 text-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-300 disabled:bg-slate-50 disabled:cursor-not-allowed"
                                             placeholder="e.g. Code Wizard"
                                         />
                                     </div>
                                     <div>
                                         <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Tagline</label>
-                                        <input 
-                                            type="text" 
-                                            value={agentForm.description || ''} 
+                                        <input
+                                            type="text"
+                                            value={agentForm.description || ''}
                                             onChange={e => handleAgentChange('description', e.target.value)}
-                                            className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-600 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                                            disabled={!agentForm.isCustom}
+                                            className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-600 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
                                             placeholder="Short description..."
                                         />
                                     </div>
@@ -482,13 +543,14 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                                     <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-4">AI Model</label>
                                     <div className="space-y-3">
                                         {AVAILABLE_MODELS.map(m => (
-                                            <label key={m.id} className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${agentForm.model === m.id ? 'bg-indigo-50 border-indigo-200 ring-1 ring-indigo-200' : 'bg-white border-slate-100 hover:border-slate-200 hover:bg-slate-50/50'}`}>
-                                                <input 
-                                                    type="radio" 
-                                                    name="model" 
+                                            <label key={m.id} className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${agentForm.model === m.id ? 'bg-indigo-50 border-indigo-200 ring-1 ring-indigo-200' : 'bg-white border-slate-100 hover:border-slate-200 hover:bg-slate-50/50'} ${!agentForm.isCustom ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                <input
+                                                    type="radio"
+                                                    name="model"
                                                     className="hidden"
-                                                    checked={agentForm.model === m.id} 
+                                                    checked={agentForm.model === m.id}
                                                     onChange={() => handleAgentChange('model', m.id)}
+                                                    disabled={!agentForm.isCustom}
                                                 />
                                                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${agentForm.model === m.id ? 'border-indigo-600' : 'border-slate-300'}`}>
                                                     {agentForm.model === m.id && <div className="w-2.5 h-2.5 rounded-full bg-indigo-600" />}
@@ -506,10 +568,11 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                                     <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-4">Theme Color</label>
                                     <div className="grid grid-cols-4 gap-4">
                                         {AVAILABLE_COLORS.map(c => (
-                                            <button 
+                                            <button
                                                 key={c.id}
                                                 onClick={() => handleAgentChange('ui_color', c.id)}
-                                                className={`w-full aspect-square rounded-xl ${c.bg} ring-2 ring-offset-2 transition-all ${agentForm.ui_color === c.id ? 'ring-slate-900 scale-95 shadow-inner' : 'ring-transparent hover:scale-105'}`}
+                                                disabled={!agentForm.isCustom}
+                                                className={`w-full aspect-square rounded-xl ${c.bg} ring-2 ring-offset-2 transition-all ${agentForm.ui_color === c.id ? 'ring-slate-900 scale-95 shadow-inner' : 'ring-transparent hover:scale-105'} ${!agentForm.isCustom ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             />
                                         ))}
                                     </div>
@@ -520,42 +583,53 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                             <div>
                                 <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-3">Base Persona & Instructions</label>
                                 <div className="relative">
-                                    <textarea 
+                                    <textarea
                                         value={agentForm.systemInstruction || ''}
                                         onChange={e => handleAgentChange('systemInstruction', e.target.value)}
+                                        disabled={!agentForm.isCustom}
                                         rows={8}
-                                        className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono leading-relaxed text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none resize-none transition-all"
+                                        className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono leading-relaxed text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none resize-none transition-all disabled:cursor-not-allowed"
                                         placeholder="Define how this agent should behave..."
                                     />
                                     <div className="absolute bottom-4 right-4 text-[10px] font-bold text-slate-400 bg-white border border-slate-200 px-2 py-1 rounded-md shadow-sm">Markdown Supported</div>
                                 </div>
                                 <p className="text-xs text-slate-400 mt-3">
-                                    This instruction defines the agent's core personality.
+                                    This instruction defines the agent&apos;s core personality.
                                 </p>
                             </div>
                         </div>
                     </div>
-                    
+
                     {/* Actions Footer */}
                     <div className="p-8 border-t border-slate-100 flex items-center justify-between">
                         {agentForm.isCustom ? (
-                            <button 
+                            <button
                                 onClick={deleteAgent}
-                                className="text-red-500 hover:text-red-700 text-sm font-bold flex items-center gap-2 px-4 py-2.5 rounded-xl hover:bg-red-50 transition-colors"
+                                disabled={deleteAgentMutation.isPending}
+                                className="text-red-500 hover:text-red-700 text-sm font-bold flex items-center gap-2 px-4 py-2.5 rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
                             >
-                                <Trash2 size={18} /> Delete Agent
+                                {deleteAgentMutation.isPending ? (
+                                  <><Loader2 size={18} className="animate-spin" /> Deleting...</>
+                                ) : (
+                                  <><Trash2 size={18} /> Delete Agent</>
+                                )}
                             </button>
                         ) : (
-                            <div></div> // Spacer
+                            <div></div>
                         )}
-                        
+
                         <div className="flex gap-3">
-                            {isFormDirty && (
-                                <button 
+                            {isFormDirty && agentForm.isCustom && (
+                                <button
                                     onClick={saveAgent}
-                                    className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-slate-300 hover:shadow-xl hover:-translate-y-0.5 transition-all active:scale-95"
+                                    disabled={updateAgentMutation.isPending || isMutating}
+                                    className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-slate-300 hover:shadow-xl hover:-translate-y-0.5 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    <Save size={18} /> Save Changes
+                                    {updateAgentMutation.isPending ? (
+                                      <><Loader2 size={18} className="animate-spin" /> Saving...</>
+                                    ) : (
+                                      <><Save size={18} /> Save Changes</>
+                                    )}
                                 </button>
                             )}
                         </div>

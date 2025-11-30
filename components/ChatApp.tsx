@@ -27,10 +27,12 @@ import {
   useAgentsMap,
   useAgentStream,
 } from '@/lib/hooks'
+import { useToast } from '@/lib/hooks/useToast'
 
 const ChatApp: React.FC = () => {
   const router = useRouter()
   const { data: session, status } = useSession()
+  const toast = useToast()
 
   // Conversation queries
   const { data: conversationsData, isLoading: isLoadingConvos } = useConversations()
@@ -98,6 +100,13 @@ const ChatApp: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('agoryx_settings', JSON.stringify(settings))
   }, [settings])
+
+  // Show toast on stream errors
+  useEffect(() => {
+    if (streamError) {
+      toast.error(streamError)
+    }
+  }, [streamError, toast])
 
   // Scroll to bottom on new messages
   const activeMode = currentConvo?.mode || settings.chatMode
@@ -201,10 +210,15 @@ const ChatApp: React.FC = () => {
 
   const handleDeleteConversation = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    await deleteConversation.mutateAsync(id)
-    if (id === currentConvoId) {
-      const remaining = conversations.filter((c) => c.id !== id)
-      setCurrentConvoId(remaining[0]?.id || null)
+    try {
+      await deleteConversation.mutateAsync(id)
+      if (id === currentConvoId) {
+        const remaining = conversations.filter((c) => c.id !== id)
+        setCurrentConvoId(remaining[0]?.id || null)
+      }
+      toast.success('Conversation deleted')
+    } catch {
+      toast.error('Failed to delete conversation')
     }
   }
 
@@ -217,8 +231,8 @@ const ChatApp: React.FC = () => {
       })
       setCurrentConvoId(result.id)
       if (window.innerWidth < 1024) setIsSidebarOpen(false)
-    } catch (error) {
-      console.error('Failed to create conversation:', error)
+    } catch {
+      toast.error('Failed to create conversation')
     }
   }
 
@@ -253,6 +267,7 @@ const ChatApp: React.FC = () => {
       const data = await response.json()
       return data.text || ''
     } catch {
+      toast.error('Voice transcription failed')
       return ''
     }
   }
@@ -452,10 +467,8 @@ const ChatApp: React.FC = () => {
 
         {isAgentConfigOpen && (
           <AgentConfigModal
-            agents={agents}
             currentConfig={activeConfig}
             chatMode={activeMode}
-            onUpdateAgents={() => {}} // TODO: Use useUpdateAgent/useCreateAgent
             onUpdateConfig={handleUpdateAgentConfig}
             onClose={() => setIsAgentConfigOpen(false)}
           />

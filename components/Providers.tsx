@@ -3,6 +3,9 @@
 import { SessionProvider } from 'next-auth/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
+import { ToastProvider } from '@/lib/hooks/useToast';
+import { ToastContainer } from '@/components/Toast';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -16,6 +19,10 @@ export default function Providers({ children }: ProvidersProps) {
           queries: {
             staleTime: 60 * 1000, // 1 minute
             refetchOnWindowFocus: false,
+            retry: 2,
+          },
+          mutations: {
+            retry: 1,
           },
         },
       })
@@ -24,7 +31,12 @@ export default function Providers({ children }: ProvidersProps) {
   return (
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
-        {children}
+        <ToastProvider>
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
+          <ToastContainer />
+        </ToastProvider>
       </QueryClientProvider>
     </SessionProvider>
   );
