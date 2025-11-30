@@ -1,12 +1,13 @@
 import { AIProvider } from './types';
 import { GeminiProvider } from './gemini.provider';
+import { AzureProvider } from './azure.provider';
 
 export * from './types';
-export { GeminiProvider };
+export { GeminiProvider, AzureProvider };
 
 /**
  * Factory function to get an AI provider instance
- * @param providerName - Name of the provider ('gemini', 'openai', 'claude')
+ * @param providerName - Name of the provider ('gemini', 'azure', 'openai', 'claude')
  * @returns AIProvider instance
  */
 export function getProvider(providerName: string = 'gemini'): AIProvider {
@@ -17,6 +18,17 @@ export function getProvider(providerName: string = 'gemini'): AIProvider {
         throw new Error('GEMINI_API_KEY environment variable is not set');
       }
       return new GeminiProvider(apiKey);
+    }
+    case 'azure': {
+      const azureKey = process.env.AZURE_OPENAI_API_KEY;
+      const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+      const azureApiVersion = process.env.AZURE_OPENAI_API_VERSION;
+      if (!azureKey || !azureEndpoint) {
+        throw new Error(
+          'AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT environment variables must be set'
+        );
+      }
+      return new AzureProvider(azureKey, azureEndpoint, azureApiVersion);
     }
     // Future providers:
     // case 'openai':
@@ -34,6 +46,7 @@ export function getProvider(providerName: string = 'gemini'): AIProvider {
  */
 export function getProviderFromModel(model: string): string {
   if (model.startsWith('gemini')) return 'gemini';
+  if (model.startsWith('azure-')) return 'azure';
   if (model.startsWith('gpt') || model.startsWith('o1')) return 'openai';
   if (model.startsWith('claude')) return 'claude';
   return 'gemini'; // Default to Gemini

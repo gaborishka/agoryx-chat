@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { AIProvider, GenerateConfig, StreamChunk } from './types';
+import { AIProvider, GenerateConfig, StreamChunk, MAX_HISTORY_MESSAGES } from './types';
 
 export class GeminiProvider implements AIProvider {
   readonly name = 'gemini';
@@ -13,9 +13,9 @@ export class GeminiProvider implements AIProvider {
     const { model, prompt, systemInstruction, history, attachments, thinkingBudget } = config;
 
     try {
-      // Build context from history
+      // Build context from history (limit to last N messages to prevent token overflow)
       const contextText = history
-        ?.slice(-8)
+        ?.slice(-MAX_HISTORY_MESSAGES)
         .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
         .join('\n\n');
 

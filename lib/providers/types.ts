@@ -3,6 +3,12 @@
  * Enables multi-provider support (Gemini, OpenAI, Claude, etc.)
  */
 
+/**
+ * Maximum number of history messages to include in context.
+ * Limits token usage while maintaining sufficient conversation context.
+ */
+export const MAX_HISTORY_MESSAGES = 8;
+
 export interface Attachment {
   type: string;
   mimeType: string;
