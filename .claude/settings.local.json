@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__next-devtools__nextjs_docs",
+      "Bash(npm install:*)",
+      "Bash(npm uninstall:*)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__get-library-docs",
+      "Bash(npm run build:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

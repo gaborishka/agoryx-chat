@@ -1,0 +1,7 @@
+{
+  "name": "Agoryx Chat",
+  "description": "A dual-system AI chat platform enabling users to interact with fast (System 1) and analytical (System 2) agents simultaneously.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
