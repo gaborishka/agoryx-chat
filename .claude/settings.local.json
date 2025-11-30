@@ -6,7 +6,9 @@
       "Bash(npm uninstall:*)",
       "mcp__context7__resolve-library-id",
       "mcp__context7__get-library-docs",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(curl:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []
