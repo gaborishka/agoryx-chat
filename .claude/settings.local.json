@@ -12,7 +12,8 @@
       "mcp__next-devtools__nextjs_index",
       "mcp__next-devtools__nextjs_call",
       "Bash(find:*)",
-      "Bash(npm run test:run:*)"
+      "Bash(npm run test:run:*)",
+      "mcp__next-devtools__browser_eval"
     ],
     "deny": [],
     "ask": []

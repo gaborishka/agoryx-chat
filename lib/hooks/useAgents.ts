@@ -38,29 +38,57 @@ async function fetchAgents(): Promise<AgentListResponse> {
 }
 
 async function createAgent(input: CreateAgentInput): Promise<Agent> {
+  // Generate agent_id from name (lowercase, replace spaces with underscores, remove special chars)
+  const agent_id = `custom_${input.name
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_-]/g, '')}_${Date.now()}`;
+
+  // Transform to match backend schema
+  const payload = {
+    agent_id,
+    name: input.name,
+    modelName: input.model, // Backend expects modelName, not model
+    ui_color: input.ui_color || 'indigo',
+    description: input.description,
+    systemInstruction: input.systemInstruction,
+    avatar_url: input.avatar_url,
+  };
+
   const res = await fetch('/api/agents', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
     throw new Error(error.error || 'Failed to create agent');
   }
-  return res.json();
+  const result = await res.json();
+  return result.data; // API returns { data: agent }
 }
 
 async function updateAgent({ id, ...input }: UpdateAgentInput): Promise<Agent> {
+  // Transform to match backend schema (model -> modelName)
+  const payload: Record<string, unknown> = {};
+  if (input.name !== undefined) payload.name = input.name;
+  if (input.model !== undefined) payload.modelName = input.model;
+  if (input.ui_color !== undefined) payload.ui_color = input.ui_color;
+  if (input.description !== undefined) payload.description = input.description;
+  if (input.systemInstruction !== undefined) payload.systemInstruction = input.systemInstruction;
+  if (input.avatar_url !== undefined) payload.avatar_url = input.avatar_url;
+
   const res = await fetch(`/api/agents/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
     throw new Error(error.error || 'Failed to update agent');
   }
-  return res.json();
+  const result = await res.json();
+  return result.data || result; // API may return { data: agent } or agent directly
 }
 
 async function deleteAgent(id: string): Promise<void> {

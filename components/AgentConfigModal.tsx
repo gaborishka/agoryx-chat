@@ -49,7 +49,7 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
   const updateAgentMutation = useUpdateAgent();
   const deleteAgentMutation = useDeleteAgent();
 
-  // Navigation State: 'chat-settings' or agentId
+  // Navigation State: 'chat-settings', 'new-agent', or agentId
   const [activeView, setActiveView] = useState<string>('chat-settings');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -60,15 +60,17 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
   const [agentForm, setAgentForm] = useState<Partial<Agent>>({});
   const [isFormDirty, setIsFormDirty] = useState(false);
 
-  // When switching views, reset/load data
+  // When switching views to an existing agent, load its data
   useEffect(() => {
-    if (activeView !== 'chat-settings') {
+    if (activeView !== 'chat-settings' && activeView !== 'new-agent') {
         const agent = agents[activeView];
-        if (agent) {
+        // Only update if we're switching to a different agent
+        if (agent && agentForm.id !== agent.id) {
             setAgentForm({ ...agent });
             setIsFormDirty(false);
         }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView, agents]);
 
   // -- Agent CRUD Operations --
@@ -105,16 +107,36 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
     }
   };
 
-  const createNewAgent = async () => {
+  const showNewAgentForm = () => {
     const newId = 'custom_' + Date.now();
+    setAgentForm({
+      id: newId,
+      name: '',
+      model: 'gemini-2.5-flash',
+      systemInstruction: '',
+      description: '',
+      avatar_url: `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${newId}`,
+      ui_color: 'indigo',
+      isCustom: true,
+    });
+    setIsFormDirty(false);
+    setActiveView('new-agent');
+  };
+
+  const createNewAgent = async () => {
+    if (!agentForm.name?.trim()) {
+      toast.error('Please enter an agent name');
+      return;
+    }
+
     try {
       const newAgent = await createAgentMutation.mutateAsync({
-        name: 'New Agent',
-        model: 'gemini-2.5-flash',
-        systemInstruction: 'You are a helpful assistant.',
-        description: 'A custom agent.',
-        avatar_url: `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${newId}`,
-        ui_color: 'indigo',
+        name: agentForm.name,
+        model: agentForm.model || 'gemini-2.5-flash',
+        systemInstruction: agentForm.systemInstruction || 'You are a helpful assistant.',
+        description: agentForm.description || '',
+        avatar_url: agentForm.avatar_url || `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${Date.now()}`,
+        ui_color: agentForm.ui_color || 'indigo',
       });
       toast.success('Agent created successfully');
       setActiveView(newAgent.id);
@@ -265,15 +287,10 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
            {/* Footer Action */}
            <div className="p-4 border-t border-slate-200 bg-slate-50">
                <button
-                 onClick={createNewAgent}
-                 disabled={createAgentMutation.isPending}
-                 className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-700 font-medium py-3 rounded-xl transition-all shadow-sm text-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                 onClick={showNewAgentForm}
+                 className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-700 font-medium py-3 rounded-xl transition-all shadow-sm text-sm hover:shadow-md"
                >
-                   {createAgentMutation.isPending ? (
-                     <><Loader2 size={16} className="animate-spin" /> Creating...</>
-                   ) : (
-                     <><Plus size={16} /> Create Agent</>
-                   )}
+                   <Plus size={16} /> Create Agent
                </button>
            </div>
         </div>
@@ -481,16 +498,16 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                 </div>
             )}
 
-            {/* VIEW 2: AGENT EDITOR */}
-            {activeView !== 'chat-settings' && (
+            {/* VIEW 2: AGENT EDITOR (Edit existing or Create new) */}
+            {(activeView !== 'chat-settings') && (
                 <div className="flex-1 flex flex-col h-full animate-fade-in">
                     {/* Toolbar */}
                     <div className="h-20 border-b border-slate-100 flex items-center justify-between px-10">
                         <h2 className="font-bold text-slate-900 text-xl flex items-center gap-3">
-                            {agentForm.isCustom ? 'Edit Agent' : 'System Agent'}
-                            {!agentForm.isCustom && <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide">Core</span>}
+                            {activeView === 'new-agent' ? 'Create New Agent' : (agentForm.isCustom ? 'Edit Agent' : 'System Agent')}
+                            {activeView !== 'new-agent' && !agentForm.isCustom && <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide">Core</span>}
                         </h2>
-                        {isFormDirty && (
+                        {activeView !== 'new-agent' && isFormDirty && (
                              <span className="text-xs text-amber-700 font-bold bg-amber-50 px-3 py-1.5 rounded-full animate-pulse border border-amber-100">Unsaved Changes</span>
                         )}
                     </div>
@@ -602,7 +619,14 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
 
                     {/* Actions Footer */}
                     <div className="p-8 border-t border-slate-100 flex items-center justify-between">
-                        {agentForm.isCustom ? (
+                        {activeView === 'new-agent' ? (
+                            <button
+                                onClick={() => setActiveView('chat-settings')}
+                                className="text-slate-500 hover:text-slate-700 text-sm font-bold flex items-center gap-2 px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        ) : agentForm.isCustom ? (
                             <button
                                 onClick={deleteAgent}
                                 disabled={deleteAgentMutation.isPending}
@@ -619,7 +643,19 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({
                         )}
 
                         <div className="flex gap-3">
-                            {isFormDirty && agentForm.isCustom && (
+                            {activeView === 'new-agent' ? (
+                                <button
+                                    onClick={createNewAgent}
+                                    disabled={createAgentMutation.isPending}
+                                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 hover:shadow-xl hover:-translate-y-0.5 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {createAgentMutation.isPending ? (
+                                      <><Loader2 size={18} className="animate-spin" /> Creating...</>
+                                    ) : (
+                                      <><Plus size={18} /> Create Agent</>
+                                    )}
+                                </button>
+                            ) : isFormDirty && agentForm.isCustom && (
                                 <button
                                     onClick={saveAgent}
                                     disabled={updateAgentMutation.isPending || isMutating}
