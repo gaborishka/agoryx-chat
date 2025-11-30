@@ -168,4 +168,29 @@ export class UserService {
     const user = await User.findById(userId, 'credits_remaining').lean();
     return user ? user.credits_remaining >= amount : false;
   }
+
+  /**
+   * Log usage for billing and analytics
+   */
+  static async logUsage(params: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+    agentId: string;
+    tokensUsed: number;
+    cost: number;
+    modelName: string;
+  }): Promise<void> {
+    await connectDB();
+
+    await UsageLog.create({
+      user_id: new mongoose.Types.ObjectId(params.userId),
+      conversation_id: new mongoose.Types.ObjectId(params.conversationId),
+      message_id: new mongoose.Types.ObjectId(params.messageId),
+      agent_id: params.agentId,
+      tokens_used: params.tokensUsed,
+      cost: params.cost,
+      modelName: params.modelName,
+    });
+  }
 }

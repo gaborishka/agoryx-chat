@@ -1,6 +1,10 @@
 import { getProvider, getProviderFromModel, HistoryMessage, StreamChunk } from '@/lib/providers';
 import { MessageService } from './message.service';
+import { UserService } from './user.service';
 import { ChatMode, ConversationAgentConfig, Agent, Attachment } from '@/types';
+
+// Minimum credits required to start a conversation
+const MIN_CREDITS_REQUIRED = 1;
 
 // ============================================================================
 // Types
@@ -56,6 +60,19 @@ export class OrchestrationService {
    */
   async *orchestrate(): AsyncGenerator<StreamEvent> {
     try {
+      // 0. Pre-flight credit check
+      const hasCredits = await UserService.hasEnoughCredits(
+        this.config.userId,
+        MIN_CREDITS_REQUIRED
+      );
+      if (!hasCredits) {
+        yield {
+          type: 'error',
+          error: 'Insufficient credits. Please add more credits to continue.',
+        };
+        return;
+      }
+
       // 1. Create user message in DB
       const userMessage = await MessageService.create(
         this.config.conversationId,
@@ -403,6 +420,18 @@ export class OrchestrationService {
 
     // Calculate cost
     const cost = Math.max(0.1, totalTokens * 0.001);
+
+    // Deduct credits and log usage
+    await UserService.deductCredits(this.config.userId, cost);
+    await UserService.logUsage({
+      userId: this.config.userId,
+      conversationId: this.config.conversationId,
+      messageId: message.id,
+      agentId,
+      tokensUsed: totalTokens,
+      cost,
+      modelName: modelId,
+    });
 
     yield {
       type: 'agent_done',

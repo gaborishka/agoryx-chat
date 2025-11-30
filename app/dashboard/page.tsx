@@ -1,39 +1,54 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import Dashboard from '@/components/Dashboard'
 import { User } from '@/types'
-import { MOCK_USER } from '@/constants'
+import { Loader2 } from 'lucide-react'
+import { useCredits } from '@/lib/hooks'
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [user, setUser] = useState<User | null>(null)
+  const { data: session, status } = useSession()
+  const { data: creditsInfo, isLoading: isLoadingCredits } = useCredits()
 
-  useEffect(() => {
-    const saved = localStorage.getItem('agoryx_user')
-    setUser(saved ? { ...MOCK_USER, ...JSON.parse(saved) } : MOCK_USER)
-  }, [])
-
-  const handleUpdateUser = (updates: Partial<User>) => {
-    setUser((prev) => {
-      if (!prev) return prev
-      const updated = { ...prev, ...updates }
-      localStorage.setItem('agoryx_user', JSON.stringify(updated))
-      return updated
-    })
+  const handleUpdateUser = () => {
+    // User updates are now handled via API - this is a no-op for now
+    // TODO: Implement user profile update via /api/user PATCH
   }
 
   const handleClose = () => {
     router.push('/')
   }
 
-  if (!user) {
+  // Auth loading
+  if (status === 'loading' || isLoadingCredits) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-600"></div>
+        <Loader2 className="h-8 w-8 animate-spin text-slate-600" />
       </div>
     )
+  }
+
+  // Not authenticated
+  if (status === 'unauthenticated') {
+    router.push('/auth/signin')
+    return null
+  }
+
+  // Build user object from session + credits
+  const user: User = {
+    id: session?.user?.id || '',
+    full_name: session?.user?.name || 'User',
+    email: session?.user?.email || '',
+    avatar_url: session?.user?.image || '',
+    credits_remaining: creditsInfo?.credits_remaining || 0,
+    subscription_tier: creditsInfo?.subscription_tier || 'free',
+    subscription_status: creditsInfo?.subscription_status || 'active',
+    current_period_end: creditsInfo?.current_period_end || '',
+    cancel_at_period_end: creditsInfo?.cancel_at_period_end || false,
+    role: ((session?.user as { role?: string })?.role || 'user') as 'user' | 'admin',
+    joined_at: new Date().toISOString(),
   }
 
   return (
