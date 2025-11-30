@@ -10,7 +10,9 @@
       "Bash(curl:*)",
       "Bash(npx tsc:*)",
       "mcp__next-devtools__nextjs_index",
-      "mcp__next-devtools__nextjs_call"
+      "mcp__next-devtools__nextjs_call",
+      "Bash(find:*)",
+      "Bash(npm run test:run:*)"
     ],
     "deny": [],
     "ask": []
