@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai'
+import { getProvider, HistoryMessage } from '@/lib/providers'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,83 +23,66 @@ interface ChatRequest {
   }>
 }
 
+/**
+ * POST /api/chat
+ * Stream a chat response using the AI provider abstraction
+ * Note: This endpoint is used by the legacy frontend (ChatApp.tsx)
+ * After Sprint 5, use POST /api/conversations/[id]/messages instead
+ */
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY
-
-  if (!apiKey) {
-    return Response.json(
-      { error: 'API key not configured' },
-      { status: 500 }
-    )
-  }
-
   try {
     const body: ChatRequest = await request.json()
-    const { prompt, history, model = 'gemini-2.5-flash', systemInstruction = '', isThinkingModel = false, attachments } = body
+    const {
+      prompt,
+      history,
+      model = 'gemini-2.5-flash',
+      systemInstruction = '',
+      isThinkingModel = false,
+      attachments,
+    } = body
 
-    const ai = new GoogleGenAI({ apiKey })
+    // Get provider (currently only Gemini, future: OpenAI, Claude)
+    const provider = getProvider('gemini')
 
-    // Build context from history
-    const contextText = history
-      .slice(-8)
-      .map((m) => `${m.sender_type === 'user' ? 'User' : m.sender_id}: ${m.content}`)
-      .join('\n\n')
+    // Convert history to provider format
+    const providerHistory: HistoryMessage[] = history.slice(-8).map((m) => ({
+      role: m.sender_type === 'user' ? 'user' : 'assistant',
+      content: m.content,
+    }))
 
-    const fullPromptText = contextText
-      ? `PREVIOUS CONVERSATION:\n${contextText}\n\nCURRENT TASK:\n${prompt}`
-      : prompt
-
-    // Build parts array
-    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = []
-
-    if (attachments) {
-      attachments.forEach((att) => {
-        if (att.data && (att.type === 'image' || att.mimeType === 'application/pdf')) {
-          parts.push({ inlineData: { mimeType: att.mimeType, data: att.data } })
-        } else if (att.textContent) {
-          parts.push({ text: `[File: ${att.name}]\n${att.textContent}` })
-        }
-      })
-    }
-    parts.push({ text: fullPromptText })
-
-    // Stream the response
-    const stream = await ai.models.generateContentStream({
-      model,
-      contents: { parts },
-      config: {
-        systemInstruction: systemInstruction || undefined,
-        thinkingConfig: isThinkingModel ? { thinkingBudget: 2048 } : undefined,
-      },
-    })
-
-    // Create a ReadableStream to send chunks to the client
+    // Create SSE stream
     const encoder = new TextEncoder()
-    const readableStream = new ReadableStream({
+    const stream = new ReadableStream({
       async start(controller) {
         try {
-          let totalTokens = 0
-
-          for await (const chunk of stream) {
-            if (chunk.text) {
-              // Send text chunk
+          for await (const chunk of provider.generateStream({
+            model,
+            prompt,
+            systemInstruction: systemInstruction || undefined,
+            history: providerHistory,
+            attachments,
+            thinkingBudget: isThinkingModel ? 2048 : undefined,
+          })) {
+            if (chunk.type === 'text' && chunk.content) {
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ type: 'text', content: chunk.text })}\n\n`
+                  `data: ${JSON.stringify({ type: 'text', content: chunk.content })}\n\n`
+                )
+              )
+            } else if (chunk.type === 'done') {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: 'done', totalTokens: chunk.totalTokens })}\n\n`
+                )
+              )
+            } else if (chunk.type === 'error') {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: 'error', message: chunk.error })}\n\n`
                 )
               )
             }
-            if (chunk.usageMetadata?.totalTokenCount) {
-              totalTokens = chunk.usageMetadata.totalTokenCount
-            }
           }
-
-          // Send final message with token count
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: 'done', totalTokens })}\n\n`
-            )
-          )
           controller.close()
         } catch (error) {
           controller.enqueue(
@@ -111,7 +95,7 @@ export async function POST(request: Request) {
       },
     })
 
-    return new Response(readableStream, {
+    return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -126,7 +110,11 @@ export async function POST(request: Request) {
   }
 }
 
-// Voice transcription endpoint
+/**
+ * PUT /api/chat
+ * Voice transcription endpoint
+ * Uses Gemini directly for non-streaming transcription
+ */
 export async function PUT(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY
 

@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, isAuthError, authErrorResponse } from '@/lib/api/auth';
 import { ConversationService } from '@/lib/services/conversation.service';
 import { MessageService } from '@/lib/services/message.service';
+import { AgentService } from '@/lib/services/agent.service';
+import { OrchestrationService } from '@/lib/services/orchestration.service';
 import { paginationSchema, createMessageSchema } from '@/lib/validations';
 import { ZodError } from 'zod';
+import { Agent } from '@/types';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -61,8 +64,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 /**
  * POST /api/conversations/[id]/messages
- * Create a new user message
- * Note: Orchestration (agent responses) will be added in Sprint 3
+ * Send a message and stream agent responses via SSE
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const auth = await requireAuth();
@@ -73,18 +75,81 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
 
-    // Verify ownership
-    const isOwner = await ConversationService.isOwner(auth.user.id, id);
-    if (!isOwner) {
+    // Get conversation with config
+    const conversation = await ConversationService.getById(auth.user.id, id);
+    if (!conversation) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
+    // Parse request body
     const body = await request.json();
     const data = createMessageSchema.parse(body);
 
-    const message = await MessageService.create(id, auth.user.id, data);
+    // Get all agents and convert to Record format
+    const agentList = await AgentService.listAll(auth.user.id);
+    const agents: Record<string, Agent> = {};
+    for (const agent of agentList) {
+      agents[agent.id] = {
+        id: agent.id,
+        name: agent.name,
+        model: agent.model,
+        avatar_url: agent.avatar_url || '',
+        description: agent.description || '',
+        ui_color: agent.ui_color,
+        systemInstruction: agent.systemInstruction,
+        isCustom: agent.isCustom,
+        isSystem: agent.isSystem,
+      };
+    }
 
-    return NextResponse.json({ data: message }, { status: 201 });
+    // Map attachments with generated IDs
+    const attachments = data.attachments?.map((att, idx) => ({
+      ...att,
+      id: `att-${Date.now()}-${idx}`,
+    }));
+
+    // Create orchestration service
+    const orchestrator = new OrchestrationService({
+      conversationId: id,
+      userId: auth.user.id,
+      userMessage: {
+        content: data.content,
+        attachments,
+      },
+      agentConfig: conversation.agentConfig,
+      mode: conversation.mode,
+      enableAutoReply: conversation.enableAutoReply,
+      agents,
+    });
+
+    // Create SSE stream
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const event of orchestrator.orchestrate()) {
+            const eventData = `data: ${JSON.stringify(event)}\n\n`;
+            controller.enqueue(encoder.encode(eventData));
+          }
+          controller.close();
+        } catch (error) {
+          const errorEvent = {
+            type: 'error',
+            error: error instanceof Error ? error.message : 'Stream failed',
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+    });
   } catch (error) {
     if (error instanceof ZodError) {
       const errors = error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ');
