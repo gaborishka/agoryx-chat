@@ -8,7 +8,9 @@
       "mcp__context7__get-library-docs",
       "Bash(npm run build:*)",
       "Bash(curl:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "mcp__next-devtools__nextjs_index",
+      "mcp__next-devtools__nextjs_call"
     ],
     "deny": [],
     "ask": []
