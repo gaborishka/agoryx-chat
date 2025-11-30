@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import connectDB from '@/lib/db/mongoose';
 import Agent, { IAgent, UiColor } from '@/lib/db/models/Agent';
+import User from '@/lib/db/models/User';
 import { DEFAULT_AGENTS } from '@/constants';
 import { CreateAgentInput, UpdateAgentInput } from '@/lib/validations';
 
@@ -16,28 +17,136 @@ export interface AgentItem {
   isSystem: boolean;
 }
 
+// System user email that owns all system agents
+const SYSTEM_USER_EMAIL = 'system@agoryx.ai';
+
+// Cache for system agents loaded from database
+let systemAgentsCache: Record<string, AgentItem> | null = null;
+let systemUserIdCache: string | null = null;
+
+/**
+ * Get system agents from database, with fallback to DEFAULT_AGENTS
+ */
+async function getSystemAgentsFromDB(): Promise<Record<string, AgentItem>> {
+  if (systemAgentsCache) {
+    return systemAgentsCache;
+  }
+
+  try {
+    await connectDB();
+
+    // Find system user
+    const systemUser = await User.findOne({ email: SYSTEM_USER_EMAIL }).lean();
+    if (!systemUser) {
+      // No system user, use hardcoded defaults
+      return convertDefaultAgents();
+    }
+
+    systemUserIdCache = systemUser._id.toString();
+
+    // Fetch system agents from database
+    const agents = await Agent.find({
+      user_id: systemUser._id,
+      isCustom: false,
+    }).lean();
+
+    if (agents.length === 0) {
+      // No agents in DB, use hardcoded defaults
+      return convertDefaultAgents();
+    }
+
+    // Convert to AgentItem format and cache
+    systemAgentsCache = agents.reduce(
+      (acc, agent) => {
+        acc[agent.agent_id] = {
+          id: agent.agent_id,
+          name: agent.name,
+          model: agent.modelName,
+          avatar_url: agent.avatar_url,
+          description: agent.description,
+          ui_color: agent.ui_color,
+          systemInstruction: agent.systemInstruction,
+          isCustom: false,
+          isSystem: true,
+        };
+        return acc;
+      },
+      {} as Record<string, AgentItem>
+    );
+
+    return systemAgentsCache;
+  } catch (error) {
+    console.error('[AgentService] Failed to load system agents from DB:', error);
+    return convertDefaultAgents();
+  }
+}
+
+/**
+ * Convert DEFAULT_AGENTS to AgentItem format
+ */
+function convertDefaultAgents(): Record<string, AgentItem> {
+  return Object.entries(DEFAULT_AGENTS).reduce(
+    (acc, [key, agent]) => {
+      acc[key] = {
+        id: agent.id,
+        name: agent.name,
+        model: agent.model,
+        avatar_url: agent.avatar_url,
+        description: agent.description,
+        ui_color: agent.ui_color as UiColor,
+        systemInstruction: agent.systemInstruction,
+        isCustom: false,
+        isSystem: true,
+      };
+      return acc;
+    },
+    {} as Record<string, AgentItem>
+  );
+}
+
+/**
+ * Invalidate the system agents cache
+ * Call this when system agents are updated
+ */
+export function invalidateSystemAgentsCache(): void {
+  systemAgentsCache = null;
+}
+
+/**
+ * Get the system user ID
+ */
+export async function getSystemUserId(): Promise<string | null> {
+  if (systemUserIdCache) {
+    return systemUserIdCache;
+  }
+
+  try {
+    await connectDB();
+    const systemUser = await User.findOne({ email: SYSTEM_USER_EMAIL }).lean();
+    if (systemUser) {
+      systemUserIdCache = systemUser._id.toString();
+      return systemUserIdCache;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export class AgentService {
   /**
    * List all agents for a user (system agents + custom agents)
+   * System agents are loaded from database with fallback to DEFAULT_AGENTS
    */
   static async listAll(userId: string): Promise<AgentItem[]> {
     await connectDB();
 
-    // Get user's custom agents
-    const customAgents = await Agent.find({ user_id: userId }).lean();
+    // Get system agents (from DB or fallback)
+    const systemAgentsMap = await getSystemAgentsFromDB();
+    const systemAgentsList = Object.values(systemAgentsMap);
 
-    // Convert system agents to AgentItem format
-    const systemAgentsList: AgentItem[] = Object.values(DEFAULT_AGENTS).map((agent) => ({
-      id: agent.id,
-      name: agent.name,
-      model: agent.model,
-      avatar_url: agent.avatar_url,
-      description: agent.description,
-      ui_color: agent.ui_color as UiColor,
-      systemInstruction: agent.systemInstruction,
-      isCustom: false,
-      isSystem: true,
-    }));
+    // Get user's custom agents
+    const customAgents = await Agent.find({ user_id: userId, isCustom: true }).lean();
 
     // Convert custom agents to AgentItem format
     const customAgentsList: AgentItem[] = customAgents.map((agent) => ({
@@ -58,26 +167,18 @@ export class AgentService {
 
   /**
    * Get a single agent by ID for a user
+   * Checks system agents (from DB with fallback) first, then custom agents
    */
   static async getById(userId: string, agentId: string): Promise<AgentItem | null> {
-    // Check if it's a system agent
-    if (DEFAULT_AGENTS[agentId]) {
-      const agent = DEFAULT_AGENTS[agentId];
-      return {
-        id: agent.id,
-        name: agent.name,
-        model: agent.model,
-        avatar_url: agent.avatar_url,
-        description: agent.description,
-        ui_color: agent.ui_color as UiColor,
-        systemInstruction: agent.systemInstruction,
-        isCustom: false,
-        isSystem: true,
-      };
+    await connectDB();
+
+    // Check if it's a system agent (from DB or fallback)
+    const systemAgents = await getSystemAgentsFromDB();
+    if (systemAgents[agentId]) {
+      return systemAgents[agentId];
     }
 
     // Check if it's a custom agent
-    await connectDB();
     const customAgent = await Agent.findOne({
       user_id: userId,
       agent_id: agentId,
@@ -108,7 +209,8 @@ export class AgentService {
     await connectDB();
 
     // Check if agent_id conflicts with system agents
-    if (DEFAULT_AGENTS[data.agent_id]) {
+    const systemAgents = await getSystemAgentsFromDB();
+    if (systemAgents[data.agent_id]) {
       throw new Error('Agent ID conflicts with a system agent');
     }
 
@@ -156,7 +258,8 @@ export class AgentService {
     data: UpdateAgentInput
   ): Promise<AgentItem | null> {
     // Cannot update system agents
-    if (DEFAULT_AGENTS[agentId]) {
+    const systemAgents = await getSystemAgentsFromDB();
+    if (systemAgents[agentId]) {
       throw new Error('Cannot update system agents');
     }
 
@@ -196,7 +299,8 @@ export class AgentService {
    */
   static async delete(userId: string, agentId: string): Promise<boolean> {
     // Cannot delete system agents
-    if (DEFAULT_AGENTS[agentId]) {
+    const systemAgents = await getSystemAgentsFromDB();
+    if (systemAgents[agentId]) {
       throw new Error('Cannot delete system agents');
     }
 
@@ -214,18 +318,27 @@ export class AgentService {
    * Check if an agent exists (system or custom)
    */
   static async exists(userId: string, agentId: string): Promise<boolean> {
-    // Check system agents first
-    if (DEFAULT_AGENTS[agentId]) {
+    await connectDB();
+
+    // Check system agents first (from DB or fallback)
+    const systemAgents = await getSystemAgentsFromDB();
+    if (systemAgents[agentId]) {
       return true;
     }
 
     // Check custom agents
-    await connectDB();
     const agent = await Agent.findOne(
       { user_id: userId, agent_id: agentId },
       { _id: 1 }
     ).lean();
 
     return agent !== null;
+  }
+
+  /**
+   * Get all system agents (for direct access without user context)
+   */
+  static async getSystemAgents(): Promise<Record<string, AgentItem>> {
+    return getSystemAgentsFromDB();
   }
 }

@@ -17,7 +17,11 @@ export async function GET() {
   try {
     const agents = await AgentService.listAll(auth.user.id);
 
-    return NextResponse.json({ data: agents });
+    // Separate into system and custom agents for the expected format
+    const system = agents.filter((agent) => agent.isSystem);
+    const custom = agents.filter((agent) => agent.isCustom);
+
+    return NextResponse.json({ system, custom });
   } catch (error) {
     console.error('GET /api/agents error:', error);
     return NextResponse.json(
