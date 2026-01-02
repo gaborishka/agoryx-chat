@@ -8,7 +8,7 @@ import Header from './Header'
 import ChatInput from './ChatInput'
 import MessageBubble from './MessageBubble'
 import AgentConfigModal from './AgentConfigModal'
-import { DEFAULT_AGENTS, DEFAULT_CONFIG } from '@/constants'
+import { DEFAULT_CONFIG } from '@/constants'
 import {
   Message,
   ChatSettings,
@@ -46,11 +46,9 @@ const ChatApp: React.FC = () => {
   const deleteConversation = useDeleteConversation()
   const updateConversation = useUpdateConversation()
 
-  // Agents
+  // Agents - loaded from API, empty until loaded
   const { data: agentsMap, isLoading: isLoadingAgents } = useAgentsMap()
-  const agents = useMemo(() => {
-    return Object.keys(agentsMap).length > 0 ? agentsMap : DEFAULT_AGENTS
-  }, [agentsMap])
+  const agents = agentsMap
 
   // Streaming
   const {

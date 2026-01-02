@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/db/mongoose';
 import Agent, { IAgent, UiColor } from '@/lib/db/models/Agent';
 import User from '@/lib/db/models/User';
-import { DEFAULT_AGENTS } from '@/constants';
+import { SYSTEM_AGENTS } from '@/scripts/seed/data/agents.data';
 import { CreateAgentInput, UpdateAgentInput } from '@/lib/validations';
 
 export interface AgentItem {
@@ -38,8 +38,8 @@ async function getSystemAgentsFromDB(): Promise<Record<string, AgentItem>> {
     // Find system user
     const systemUser = await User.findOne({ email: SYSTEM_USER_EMAIL }).lean();
     if (!systemUser) {
-      // No system user, use hardcoded defaults
-      return convertDefaultAgents();
+      // No system user, use seed data as fallback
+      return convertSeedAgentsToFallback();
     }
 
     systemUserIdCache = systemUser._id.toString();
@@ -51,8 +51,8 @@ async function getSystemAgentsFromDB(): Promise<Record<string, AgentItem>> {
     }).lean();
 
     if (agents.length === 0) {
-      // No agents in DB, use hardcoded defaults
-      return convertDefaultAgents();
+      // No agents in DB, use seed data as fallback
+      return convertSeedAgentsToFallback();
     }
 
     // Convert to AgentItem format and cache
@@ -77,23 +77,23 @@ async function getSystemAgentsFromDB(): Promise<Record<string, AgentItem>> {
     return systemAgentsCache;
   } catch (error) {
     console.error('[AgentService] Failed to load system agents from DB:', error);
-    return convertDefaultAgents();
+    return convertSeedAgentsToFallback();
   }
 }
 
 /**
- * Convert DEFAULT_AGENTS to AgentItem format
+ * Convert SYSTEM_AGENTS seed data to AgentItem format (fallback when DB is unavailable)
  */
-function convertDefaultAgents(): Record<string, AgentItem> {
-  return Object.entries(DEFAULT_AGENTS).reduce(
-    (acc, [key, agent]) => {
-      acc[key] = {
-        id: agent.id,
+function convertSeedAgentsToFallback(): Record<string, AgentItem> {
+  return SYSTEM_AGENTS.reduce(
+    (acc, agent) => {
+      acc[agent.agent_id] = {
+        id: agent.agent_id,
         name: agent.name,
-        model: agent.model,
+        model: agent.modelName,
         avatar_url: agent.avatar_url,
         description: agent.description,
-        ui_color: agent.ui_color as UiColor,
+        ui_color: agent.ui_color,
         systemInstruction: agent.systemInstruction,
         isCustom: false,
         isSystem: true,

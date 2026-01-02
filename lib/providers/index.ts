@@ -1,9 +1,10 @@
 import { AIProvider } from './types';
 import { GeminiProvider } from './gemini.provider';
 import { AzureProvider } from './azure.provider';
+import { DialXProvider } from './dialx.provider';
 
 export * from './types';
-export { GeminiProvider, AzureProvider };
+export { GeminiProvider, AzureProvider, DialXProvider };
 
 /**
  * Factory function to get an AI provider instance
@@ -30,6 +31,15 @@ export function getProvider(providerName: string = 'gemini'): AIProvider {
       }
       return new AzureProvider(azureKey, azureEndpoint, azureApiVersion);
     }
+    case 'dialx': {
+      const dialxKey = process.env.DIALX_API_KEY;
+      const dialxEndpoint = process.env.DIALX_ENDPOINT;
+      const dialxApiVersion = process.env.DIALX_API_VERSION;
+      if (!dialxKey) {
+        throw new Error('DIALX_API_KEY environment variable is not set');
+      }
+      return new DialXProvider(dialxKey, dialxEndpoint, dialxApiVersion);
+    }
     // Future providers:
     // case 'openai':
     //   return new OpenAIProvider(process.env.OPENAI_API_KEY!);
@@ -47,6 +57,7 @@ export function getProvider(providerName: string = 'gemini'): AIProvider {
 export function getProviderFromModel(model: string): string {
   if (model.startsWith('gemini')) return 'gemini';
   if (model.startsWith('azure-')) return 'azure';
+  if (model.startsWith('dialx-')) return 'dialx';
   if (model.startsWith('gpt') || model.startsWith('o1')) return 'openai';
   if (model.startsWith('claude')) return 'claude';
   return 'gemini'; // Default to Gemini

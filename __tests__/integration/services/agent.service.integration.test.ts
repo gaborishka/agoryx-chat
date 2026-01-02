@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { setupTestDB, teardownTestDB, clearTestDB } from '../../mocks/db';
 import { AgentService } from '@/lib/services/agent.service';
 import Agent from '@/lib/db/models/Agent';
 import { createTestUser } from '../../mocks/factories/user.factory';
 import User from '@/lib/db/models/User';
-import { DEFAULT_AGENTS } from '@/constants';
+import { SYSTEM_AGENTS } from '@/scripts/seed/data/agents.data';
 
 // Mock the connectDB to avoid connecting to real DB
 vi.mock('@/lib/db/mongoose', () => ({
@@ -48,7 +48,7 @@ describe('AgentService Integration Tests', () => {
       const agents = await AgentService.listAll(testUserId);
 
       // Should have all system agents
-      const systemAgentCount = Object.keys(DEFAULT_AGENTS).length;
+      const systemAgentCount = SYSTEM_AGENTS.length;
       expect(agents.length).toBe(systemAgentCount);
 
       // All should be marked as system agents
@@ -70,7 +70,7 @@ describe('AgentService Integration Tests', () => {
 
       const agents = await AgentService.listAll(testUserId);
 
-      const systemAgentCount = Object.keys(DEFAULT_AGENTS).length;
+      const systemAgentCount = SYSTEM_AGENTS.length;
       expect(agents.length).toBe(systemAgentCount + 1);
 
       // System agents should be first
@@ -440,8 +440,8 @@ describe('AgentService Integration Tests', () => {
     });
 
     it('should return true for all system agent IDs', async () => {
-      for (const agentId of Object.keys(DEFAULT_AGENTS)) {
-        const result = await AgentService.exists(testUserId, agentId);
+      for (const agent of SYSTEM_AGENTS) {
+        const result = await AgentService.exists(testUserId, agent.agent_id);
         expect(result).toBe(true);
       }
     });

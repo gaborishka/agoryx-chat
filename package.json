@@ -13,9 +13,9 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest --watch",
-    "db:seed": "tsx scripts/seed/index.ts",
-    "db:seed:reset": "tsx scripts/seed/index.ts --reset",
-    "db:clear": "tsx scripts/seed/index.ts --clear"
+    "db:seed": "node --env-file=.env.local --import tsx scripts/seed/index.ts",
+    "db:seed:reset": "node --env-file=.env.local --import tsx scripts/seed/index.ts --reset",
+    "db:clear": "node --env-file=.env.local --import tsx scripts/seed/index.ts --clear"
   },
   "dependencies": {
     "@auth/mongodb-adapter": "^3.11.1",

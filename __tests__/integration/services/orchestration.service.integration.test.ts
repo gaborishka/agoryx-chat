@@ -6,7 +6,7 @@ import Conversation from '@/lib/db/models/Conversation';
 import Message from '@/lib/db/models/Message';
 import { createTestUser } from '../../mocks/factories/user.factory';
 import { createTestConversation } from '../../mocks/factories/conversation.factory';
-import { DEFAULT_AGENTS } from '@/constants';
+import { SYSTEM_AGENTS } from '@/scripts/seed/data/agents.data';
 import { Agent } from '@/types';
 
 // Mock the connectDB to avoid connecting to real DB
@@ -24,14 +24,14 @@ vi.mock('@/lib/providers', () => ({
   getProviderFromModel: vi.fn(() => 'gemini'),
 }));
 
-// Convert DEFAULT_AGENTS to Agent type for tests
+// Convert SYSTEM_AGENTS seed data to Agent type for tests
 const testAgents: Record<string, Agent> = Object.fromEntries(
-  Object.entries(DEFAULT_AGENTS).map(([key, agent]) => [
-    key,
+  SYSTEM_AGENTS.map((agent) => [
+    agent.agent_id,
     {
-      id: agent.id,
+      id: agent.agent_id,
       name: agent.name,
-      model: agent.model,
+      model: agent.modelName,
       avatar_url: agent.avatar_url,
       description: agent.description,
       ui_color: agent.ui_color,

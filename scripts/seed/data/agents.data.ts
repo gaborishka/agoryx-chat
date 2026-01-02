@@ -171,4 +171,83 @@ export const SYSTEM_AGENTS: AgentSeedData[] = [
       'You are Lite, a cost-efficient AI assistant powered by GPT-5 Mini. Provide helpful, accurate responses while being mindful of efficiency and resource usage.',
     isCustom: false,
   },
+
+  // DialX Agents - Multi-provider aggregator (AI DIAL)
+  {
+    agent_id: 'dialx-gpt4o',
+    name: 'GPT-4o Mini',
+    modelName: 'dialx-gpt-4o-mini-2024-07-18',
+    avatar_url: 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=GPT4o&backgroundColor=10a37f',
+    description: 'OpenAI GPT-4o Mini via DialX. Fast multimodal model.',
+    ui_color: 'emerald',
+    systemInstruction:
+      "You are GPT-4o Mini, an efficient OpenAI multimodal model. Excel at reasoning, creative tasks, and nuanced understanding. Provide thorough, well-structured responses.",
+    isCustom: false,
+  },
+  {
+    agent_id: 'dialx-gpt4',
+    name: 'GPT-4',
+    modelName: 'dialx-gpt-4',
+    avatar_url: 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=GPT4&backgroundColor=059669',
+    description: 'OpenAI GPT-4 via DialX. Advanced reasoning model.',
+    ui_color: 'green',
+    systemInstruction:
+      "You are GPT-4, OpenAI's powerful model. Excel at complex reasoning, creative tasks, and nuanced understanding. Provide thorough, well-structured responses.",
+    isCustom: false,
+  },
+  {
+    agent_id: 'dialx-claude-sonnet',
+    name: 'Claude 3.5 Sonnet',
+    modelName: 'dialx-anthropic.claude-v3-5-sonnet-v2',
+    avatar_url: 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=ClaudeSonnet&backgroundColor=d97706',
+    description: 'Anthropic Claude 3.5 Sonnet via DialX. Balanced speed and intelligence.',
+    ui_color: 'orange',
+    systemInstruction:
+      "You are Claude 3.5 Sonnet, Anthropic's balanced model. Known for excellent reasoning, nuanced understanding, and thoughtful analysis. Be thorough, honest, and insightful.",
+    isCustom: false,
+  },
+  {
+    agent_id: 'dialx-gemini-flash',
+    name: 'Gemini 2.5 Flash',
+    modelName: 'dialx-gemini-2.5-flash',
+    avatar_url: 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=GeminiFlash&backgroundColor=4285f4',
+    description: 'Google Gemini 2.5 Flash via DialX. Fast multimodal reasoning.',
+    ui_color: 'blue',
+    systemInstruction:
+      "You are Gemini 2.5 Flash, Google's fast multimodal AI. Excel at analysis, code, and creative tasks. Leverage your broad knowledge and reasoning capabilities.",
+    isCustom: false,
+  },
+  {
+    agent_id: 'dialx-gpt5',
+    name: 'GPT-5',
+    modelName: 'dialx-gpt-5-2025-08-07',
+    avatar_url: 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=GPT5&backgroundColor=0ea5e9',
+    description: 'OpenAI GPT-5 via DialX. Most advanced reasoning model.',
+    ui_color: 'cyan',
+    systemInstruction:
+      "You are GPT-5, OpenAI's most advanced model. Excel at complex reasoning, creative tasks, and nuanced understanding. Provide thorough, well-structured responses.",
+    isCustom: false,
+  },
+  {
+    agent_id: 'dialx-sonnet45',
+    name: 'Claude Sonnet 4.5',
+    modelName: 'dialx-anthropic.claude-sonnet-4-5-20250929-v1:0',
+    avatar_url: 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=Sonnet45&backgroundColor=f59e0b',
+    description: 'Anthropic Claude Sonnet 4.5 via DialX. Fast and intelligent.',
+    ui_color: 'amber',
+    systemInstruction:
+      "You are Claude Sonnet 4.5, Anthropic's latest balanced model. Known for excellent reasoning, nuanced understanding, and thoughtful analysis. Be thorough, honest, and insightful.",
+    isCustom: false,
+  },
+  {
+    agent_id: 'dialx-gemini3-flash',
+    name: 'Gemini 3 Flash',
+    modelName: 'dialx-gemini-3-flash-preview',
+    avatar_url: 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=Gemini3Flash&backgroundColor=3b82f6',
+    description: 'Google Gemini 3 Flash via DialX. Latest fast multimodal model.',
+    ui_color: 'indigo',
+    systemInstruction:
+      "You are Gemini 3 Flash, Google's latest fast multimodal AI. Excel at analysis, code, and creative tasks with cutting-edge capabilities.",
+    isCustom: false,
+  },
 ];

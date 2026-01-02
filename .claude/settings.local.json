@@ -13,7 +13,12 @@
       "mcp__next-devtools__nextjs_call",
       "Bash(find:*)",
       "Bash(npm run test:run:*)",
-      "mcp__next-devtools__browser_eval"
+      "mcp__next-devtools__browser_eval",
+      "WebFetch(domain:dialx.ai)",
+      "WebSearch",
+      "WebFetch(domain:docs.dialx.ai)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "deny": [],
     "ask": []
